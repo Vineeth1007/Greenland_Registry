@@ -18,7 +18,7 @@ Short answer: **feature engineering + inductive bias**. Gradient-boosted decisio
 - For relatively small/medium-sized datasets (thousands to low millions of rows), GBDTs often require less data to generalize well compared to deep nets.
 - Feature engineering (aggregations, time-based stats, domain-specific ratios) gives trees very direct splits to exploit.
 
-In your pipeline:
+In the pipeline:
 - The dataset already contains ~48 well-crafted aggregated features (total sent/received, avg times, ERC20 summaries). This gives LightGBM a big advantage out-of-the-box.
 - The GNN used a **k-NN graph** built from feature similarity (synthetic), which may not provide meaningful relational signal beyond the features themselves.
 - The TabTransformer in the notebook treats the entire row as a single projected vector — not full per-feature attention — so it isn't fully exploiting transformer strengths.
