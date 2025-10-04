@@ -1,0 +1,12 @@
+numpy
+pandas
+scikit-learn
+matplotlib
+torch
+torchvision
+torchaudio
+# Note: torch-geometric requires specific installation depending on your torch/cuda version.
+# Visit https://pytorch-geometric.readthedocs.io for the correct pip/conda commands.
+torch-geometric
+lightgbm
+nbformat
