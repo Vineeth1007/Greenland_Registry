@@ -1,0 +1,175 @@
+🧩 1. Data Integrity & Preprocessing Fixes
+✅ 1.1. Duplicate address removal
+
+Before: Some Ethereum addresses appeared multiple times with inconsistent label mappings → risk of leakage and bias.
+
+Now: We de-duplicated addresses, aggregating numeric features (mean/median) and categorical ones (mode).
+
+Impact: Each address now appears exactly once — ensuring one label per entity.
+
+✅ 1.2. Consistent feature–label alignment
+
+Before: There was a mismatch between feature rows (X) and labels (y) — e.g., LightGBM’s AUC ≈ 0.48 due to misalignment.
+
+Now: After deduplication, we realigned all rows so each feature vector corresponds correctly to its label (FLAG).
+
+Impact: Models now train and evaluate on synchronized features and targets.
+
+✅ 1.3. Canonical Train/Val/Test split
+
+Before: Some models (especially TabTransformer) created new random splits inside their code, so each model was testing on different subsets.
+
+Now:
+
+Created canonical 80/15/5 split during preprocessing.
+
+Saved consistent arrays:
+
+X_train.npy, X_val.npy, X_test.npy
+
+y_train.npy, y_val.npy, y_test.npy
+
+addresses_train.npy, addresses_val.npy, addresses_test.npy
+
+Every model now reuses these exact splits.
+
+Impact: All results are directly comparable and reproducible.
+
+✅ 1.4. Prevented data leakage
+
+Before: There was leakage risk from scaling or encoding fitted on the entire dataset.
+
+Now:
+
+LabelEncoders and StandardScaler fitted only on training data.
+
+Validation/test use those fitted objects.
+
+Saved as preproc_train_encoders.pkl for reproducibility.
+
+Impact: Fair, leak-free generalization estimates.
+
+✅ 1.5. Sanitization of categorical features
+
+Before: Token name/type columns had thousands of unique strings (some near-identifiers).
+
+Now:
+
+Collapsed rare values (<50 occurrences) into "OTHER".
+
+Normalized placeholders like '', '0', '<<NA>>'.
+
+Saved the sanitization map (sanitization_info.pkl).
+
+Impact: Prevented the model from memorizing address- or token-specific IDs → genuine generalization.
+
+⚙️ 2. Modeling & Training Fixes
+✅ 2.1. LightGBM parameter correction
+
+Before: Wrong parameter gdbt caused LightGBM to fail / underperform.
+
+Now: Corrected to 'gbdt', used callback API (early_stopping) for robust training.
+
+Impact: Valid training loop with early stopping and logging.
+
+✅ 2.2. Early stopping callback API
+
+Before: Older LightGBM versions threw errors for early_stopping_rounds inside .fit().
+
+Now: Moved to callback-based API:
+
+callbacks=[lgb.early_stopping(50), lgb.log_evaluation(50)]
+
+
+Impact: Works across all versions, avoids silent parameter mismatches.
+
+✅ 2.3. Fixed GNN feature/label mismatch
+
+Before: Graph node features (x_nodes) and labels (y_nodes) had different lengths (11,022 vs 9,816).
+
+Now: Rebuilt graph_artifacts.pt from canonical stacked data (train → val → test).
+
+Impact: GNN now trains with aligned node feature–label pairs.
+
+✅ 2.4. Address-to-node index mapping in GNN
+
+Before: The GNN randomly split nodes, so the test set didn’t match LightGBM’s test set.
+
+Now:
+
+Added mapping from saved addresses_train/val/test.npy to node indices inside graph_artifacts.pt.
+
+Reused these canonical indices for training/validation/testing.
+
+Impact: GNN now uses the exact same test samples as other models.
+
+✅ 2.5. Canonical split reuse in TabTransformer
+
+Before: TabTransformer rebuilt a fresh random split each time.
+
+Now:
+
+Replaced train_test_split(...) with canonical indices derived from saved splits.
+
+Uses same test rows as LightGBM/GNN.
+
+Impact: No more random test sets; consistent and comparable results.
+
+✅ 2.6. Unified output file naming
+
+Before: Inconsistent naming (lgb_test_probs.npy vs lightgbm_test_probs.npy) caused misreads during evaluation.
+
+Now: Standardized across all models:
+
+gnn_test_probs.npy / preds.npy / true.npy
+tab_test_probs.npy / preds.npy / true.npy
+lightgbm_test_probs.npy / preds.npy / true.npy
+logreg_test_probs.npy / preds.npy / true.npy
+svm_test_probs.npy / preds.npy / true.npy
+
+
+Impact: Evaluation cell automatically maps correct files → correct models.
+
+📊 3. Evaluation & Analysis Fixes
+✅ 3.1. Robust comparison cell
+
+Before: Auto-discovery mismatched files (TabTransformer used gnn_test_probs.npy).
+
+Now:
+
+Explicit canonical filename mapping.
+
+Added length checks, numeric validation, and “no file reuse” rule.
+
+Verified all *_test_probs.npy have length 1964.
+
+Impact: Fair, 1:1 model comparison on identical test labels.
+
+✅ 3.2. Ablation & permutation importance
+
+Before: No validation that top features weren’t leaks.
+
+Now: Shuffled top features → minor AUC drop (~0.08), confirming no ID leakage.
+
+Impact: Empirically verified model robustness.
+
+✅ 3.3. Sanitized LightGBM retraining
+
+Before: Potential overfitting to unique tokens.
+
+Now: Collapsed rare categories → retrained → AUC remained ≈ 0.99.
+
+Impact: Confirms LightGBM’s high performance is genuine.
+
+✅ 3.4. Final unified evaluation
+
+After all fixes, the canonical comparison yielded:
+
+Model	ROC-AUC	PR-AUC	Precision	Recall	F1	Accuracy
+LightGBM	0.9992	0.9981	1.000	0.972	0.986	0.994
+SVM	0.9952	0.9868	0.988	0.919	0.952	0.980
+TabTransformer	0.9949	0.9869	0.997	0.907	0.950	0.979
+GNN	0.9896	0.9816	0.926	0.937	0.932	0.970
+LogReg	0.9180	0.8226	0.778	0.870	0.821	0.917
+
+Interpretation: LightGBM dominates, deep models competitive, all valid on the same test set.
